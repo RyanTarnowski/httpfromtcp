@@ -32,13 +32,8 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("invalid key value pair")
 	}
 
-	//Check for leading spaces
-	if strings.TrimSpace(headerParts[0]) != headerParts[0] {
-		return 0, false, fmt.Errorf("invalid key name")
-	}
-
-	//Check for spaces in the key name
-	if strings.ReplaceAll(headerParts[0], " ", "") != headerParts[0] {
+	//Check for spaces and tabs
+	if strings.ContainsAny(headerParts[0], " \t") {
 		return 0, false, fmt.Errorf("invalid key name")
 	}
 
