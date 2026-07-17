@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/RyanTarnowski/httpfromtcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	State       State
+	Headers     headers.Headers
 }
 
 type RequestLine struct {
@@ -26,6 +29,7 @@ type State int
 
 const (
 	Initialized State = iota
+	ParsingHeaders
 	Done
 )
 
@@ -33,7 +37,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	bSlice := make([]byte, buffSize)
 	readToIndex := 0
 	request := Request{
-		State: Initialized,
+		State:   Initialized,
+		Headers: make(headers.Headers),
 	}
 
 	for request.State != Done {
@@ -45,12 +50,13 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		n, err := reader.Read(bSlice[readToIndex:])
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				return nil, fmt.Errorf("Error reading: %v", err)
+			if errors.Is(err, io.EOF) {
+				if request.State != Done {
+					return nil, fmt.Errorf("incomplete request, in state: %d, read n bytes on EOF: %d", request.State, n)
+				}
+				break
 			}
-
-			request.State = Done
-			break
+			return nil, err
 		}
 
 		readToIndex += n
@@ -72,7 +78,7 @@ func parseRequestLine(data []byte) (*RequestLine, int, error) {
 	if idx == -1 {
 		return nil, 0, nil
 	}
-	byteLength := len(data)
+	//byteLength := len(data)
 	requestLineText := string(data[:idx])
 	request_line_part := strings.Split(requestLineText, " ")
 
@@ -103,10 +109,28 @@ func parseRequestLine(data []byte) (*RequestLine, int, error) {
 		HttpVersion:   version,
 		RequestTarget: request_line_part[1],
 		Method:        request_line_part[0],
-	}, byteLength, nil
+	}, idx + 2, nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+
+	for r.State != Done {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += n
+
+		if n == 0 {
+			break
+		}
+	}
+
+	return totalBytesParsed, nil
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.State {
 	case Initialized:
 		request_line, bytes_consumed, err := parseRequestLine(data)
@@ -116,10 +140,19 @@ func (r *Request) parse(data []byte) (int, error) {
 		if bytes_consumed == 0 {
 			return 0, nil
 		}
-		r.RequestLine = *request_line
-		r.State = Done
-		return bytes_consumed, nil
 
+		r.RequestLine = *request_line
+		r.State = ParsingHeaders
+		return bytes_consumed, nil
+	case ParsingHeaders:
+		bytes_consumed, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, fmt.Errorf("error parsing header line: %s bytes_consumed: %d", err.Error(), bytes_consumed)
+		}
+		if done {
+			r.State = Done
+		}
+		return bytes_consumed, nil
 	case Done:
 		return 0, fmt.Errorf("trying to read data in a done state")
 	default:
