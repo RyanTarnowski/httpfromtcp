@@ -47,18 +47,32 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("invalid characters in key")
 	}
 
-	value, ok := h[strings.ToLower(headerParts[0])]
+	//value, ok := h[strings.ToLower(headerParts[0])]
 
-	if ok {
-		h[strings.ToLower(headerParts[0])] = value + ", " + strings.TrimSpace(headerParts[1])
-	} else {
-		h[strings.ToLower(headerParts[0])] = strings.TrimSpace(headerParts[1])
-	}
+	//if ok {
+	//h[strings.ToLower(headerParts[0])] = value + ", " + strings.TrimSpace(headerParts[1])
+	//} else {
+	//h[strings.ToLower(headerParts[0])] = strings.TrimSpace(headerParts[1])
+	//}
 
+	h.Set(headerParts[0], headerParts[1])
 	return idx + 2, false, nil
 }
 
 func (h Headers) GetValueByKey(key string) (string, bool) {
 	v, ok := h[strings.ToLower(key)]
 	return v, ok
+}
+
+func (h Headers) Set(key, value string) {
+	value = strings.TrimSpace(value)
+	key = strings.ToLower(key)
+	v, ok := h[key]
+	if ok {
+		value = strings.Join([]string{
+			v,
+			value,
+		}, ", ")
+	}
+	h[key] = value
 }
