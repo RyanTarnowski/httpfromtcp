@@ -65,6 +65,8 @@ func (s *Server) listen() {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
+	writer := response.NewWriter(conn)
+
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
 		he := &HandlerError{
@@ -79,11 +81,13 @@ func (s *Server) handle(conn net.Conn) {
 	if he != nil {
 		he.Write(conn)
 	} else {
-		err := response.WriteStatusLine(conn, response.StatusCodeSuccess)
+		err := writer.WriteStatusLine(response.StatusCodeSuccess)
+		//err := response.WriteStatusLine(conn, response.StatusCodeSuccess)
 		if err != nil {
 			fmt.Printf("error writing status line: %v\n", err)
 		}
-		err = response.WriteHeaders(conn, response.GetDefaultHeaders(buff.Len()))
+		err = writer.WriteHeaders(response.GetDefaultHeaders(buff.Len()))
+		//err = response.WriteHeaders(conn, response.GetDefaultHeaders(buff.Len()))
 		if err != nil {
 			fmt.Printf("error writing headers: %v\n", err)
 		}
@@ -92,11 +96,15 @@ func (s *Server) handle(conn net.Conn) {
 }
 
 func (he HandlerError) Write(w io.Writer) {
-	err := response.WriteStatusLine(w, he.StatusCode)
+	writer := response.NewWriter(w)
+
+	err := writer.WriteStatusLine(he.StatusCode)
+	//err := response.WriteStatusLine(w, he.StatusCode)
 	if err != nil {
 		fmt.Printf("error writing status line: %v\n", err)
 	}
-	err = response.WriteHeaders(w, response.GetDefaultHeaders(len(he.Message)))
+	err = writer.WriteHeaders(response.GetDefaultHeaders(len(he.Message)))
+	//err = response.WriteHeaders(w, response.GetDefaultHeaders(len(he.Message)))
 	if err != nil {
 		fmt.Printf("error writing headers: %v\n", err)
 	}
