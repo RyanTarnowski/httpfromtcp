@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/RyanTarnowski/httpfromtcp/internal/headers"
 )
@@ -20,6 +21,8 @@ const (
 	WritingStatusLine writerState = iota
 	WritingHeaders
 	WritingBody
+	WritingBodyEnd
+	WritingTrailers
 )
 
 type StatusCode int
@@ -37,21 +40,6 @@ func NewWriter(w io.Writer) *Writer {
 	}
 }
 
-// func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
-// 	statusLine := ""
-// 	switch statusCode {
-// 	case StatusCodeSuccess:
-// 		statusLine = "HTTP/1.1 200 OK"
-// 	case StatusCodeBadRequest:
-// 		statusLine = "HTTP/1.1 400 Bad Request"
-// 	case StatusCodeInternalServerError:
-// 		statusLine = "HTTP/1.1 500 Internal Server Error"
-// 	}
-//
-// 	_, err := w.Write([]byte(statusLine + crlf))
-// 	return err
-// }
-
 func GetDefaultHeaders(contentLen int) headers.Headers {
 	h := headers.NewHeaders()
 	h.Set("Content-Length", fmt.Sprintf("%d", contentLen))
@@ -59,18 +47,6 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	h.Set("Content-Type", "text/html")
 	return h
 }
-
-// func WriteHeaders(w io.Writer, headers headers.Headers) error {
-// 	for key, value := range headers {
-// 		_, err := w.Write([]byte(fmt.Sprintf("%s: %s%s", key, value, crlf)))
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	_, err := w.Write([]byte(crlf))
-//
-// 	return err
-// }
 
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	if w.state != WritingStatusLine {
@@ -98,7 +74,7 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	}
 
 	for key, value := range headers {
-		_, err := w.writer.Write([]byte(fmt.Sprintf("%s: %s%s", key, value, crlf)))
+		_, err := fmt.Fprintf(w.writer, "%s: %s%s", key, value, crlf)
 		if err != nil {
 			return err
 		}
@@ -114,5 +90,53 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 		return 0, fmt.Errorf("Attempted to write body out of order")
 	}
 
+	w.state = WritingBodyEnd
 	return w.writer.Write(p)
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.state != WritingBody {
+		return 0, fmt.Errorf("Attempted to write body out of order")
+	}
+
+	return fmt.Fprintf(w.writer, "%X%s%s%s", len(p), crlf, p, crlf)
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	if w.state != WritingBodyEnd {
+		return 0, fmt.Errorf("Attempted to write end of body out of order")
+	}
+
+	w.state = WritingTrailers
+	return fmt.Fprintf(w.writer, "0%s", crlf)
+}
+
+func (w *Writer) SetChunkedBodeEndState() {
+	w.state = WritingBodyEnd
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.state != WritingTrailers {
+		return fmt.Errorf("Attempted to write trailers out of order")
+	}
+
+	trailers, ok := h.GetValueByKey("trailer")
+	if ok {
+		for key := range strings.SplitSeq(trailers, ",") {
+			key = strings.TrimSpace(key)
+			value, ok := h.GetValueByKey(key)
+			if ok {
+				_, err := fmt.Fprintf(w.writer, "%s: %s%s", key, value, crlf)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	_, err := w.writer.Write([]byte(crlf))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

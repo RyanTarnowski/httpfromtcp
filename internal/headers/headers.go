@@ -68,3 +68,14 @@ func (h Headers) Set(key, value string) {
 	}
 	h[key] = value
 }
+
+func (h Headers) Override(key, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
+}
+
+func (h Headers) Replace(oldKey, key, value string) {
+	oldKey = strings.ToLower(oldKey)
+	delete(h, oldKey)
+	h.Set(key, value)
+}

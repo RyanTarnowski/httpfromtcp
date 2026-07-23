@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync/atomic"
@@ -23,7 +21,7 @@ type HandlerError struct {
 	Message    string
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 func Serve(port int, handler Handler) (*Server, error) {
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -65,49 +63,15 @@ func (s *Server) listen() {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
-	writer := response.NewWriter(conn)
+	w := response.NewWriter(conn)
 
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		he := &HandlerError{
-			StatusCode: response.StatusCodeBadRequest,
-			Message:    err.Error(),
-		}
-		he.Write(conn)
+		w.WriteStatusLine(response.StatusCodeBadRequest)
+		body := fmt.Appendf(nil, "Error parsing request: %v", err)
+		w.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		w.WriteBody(body)
 		return
 	}
-	var buff bytes.Buffer
-	he := s.handler(&buff, req)
-	if he != nil {
-		he.Write(conn)
-	} else {
-		err := writer.WriteStatusLine(response.StatusCodeSuccess)
-		//err := response.WriteStatusLine(conn, response.StatusCodeSuccess)
-		if err != nil {
-			fmt.Printf("error writing status line: %v\n", err)
-		}
-		err = writer.WriteHeaders(response.GetDefaultHeaders(buff.Len()))
-		//err = response.WriteHeaders(conn, response.GetDefaultHeaders(buff.Len()))
-		if err != nil {
-			fmt.Printf("error writing headers: %v\n", err)
-		}
-		conn.Write(buff.Bytes())
-	}
-}
-
-func (he HandlerError) Write(w io.Writer) {
-	writer := response.NewWriter(w)
-
-	err := writer.WriteStatusLine(he.StatusCode)
-	//err := response.WriteStatusLine(w, he.StatusCode)
-	if err != nil {
-		fmt.Printf("error writing status line: %v\n", err)
-	}
-	err = writer.WriteHeaders(response.GetDefaultHeaders(len(he.Message)))
-	//err = response.WriteHeaders(w, response.GetDefaultHeaders(len(he.Message)))
-	if err != nil {
-		fmt.Printf("error writing headers: %v\n", err)
-	}
-
-	w.Write([]byte(he.Message))
+	s.handler(w, req)
 }
