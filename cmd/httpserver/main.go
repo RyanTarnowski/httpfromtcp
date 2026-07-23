@@ -86,6 +86,12 @@ func handler(w *response.Writer, req *request.Request) {
 		return
 	}
 
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/video") {
+		handlerVideo(w, req)
+
+		return
+	}
+
 	switch req.RequestLine.RequestTarget {
 	case "/yourproblem":
 		handler400(w, req)
@@ -148,6 +154,19 @@ func handler200(w *response.Writer, _ *request.Request) {
 `)
 	h := response.GetDefaultHeaders(len(body))
 	h.Override("Content-Type", "text/html")
+	w.WriteHeaders(h)
+	w.WriteBody(body)
+}
+
+func handlerVideo(w *response.Writer, _ *request.Request) {
+	w.WriteStatusLine(response.StatusCodeSuccess)
+	body, err := os.ReadFile("assets/vim.mp4")
+	if err != nil {
+		fmt.Println("Error reading video file:", err)
+		return
+	}
+	h := response.GetDefaultHeaders(len(body))
+	h.Override("Content-Type", "video/mp4")
 	w.WriteHeaders(h)
 	w.WriteBody(body)
 }
